@@ -17,8 +17,8 @@ pragma solidity 0.8.20;
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract TSwapPool is ERC20 {
-    error TSwapPool__DeadlineHasPassed(uint64 deadline);
+contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that represents a liquidity pool for swapping between a specific ERC20 token and WETH. It allows users to add and remove liquidity, as well as swap tokens within the pool. The contract maintains the invariant that the ratio of WETH, PoolTokens, and LiquidityTokens remains constant before and after transactions, ensuring fair pricing and liquidity management.
+    error TSwapPool__DeadlineHasPassed(uint64 deadline); // Custom error that is thrown when a transaction is attempted after the specified deadline has passed. This is used to enforce time limits on transactions, ensuring that they are executed within a certain timeframe. @q Why?
     error TSwapPool__MaxPoolTokenDepositTooHigh(
         uint256 maximumPoolTokensToDeposit,
         uint256 poolTokensToDeposit
