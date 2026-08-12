@@ -39,7 +39,7 @@ contract PoolFactory {
     //////////////////////////////////////////////////////////////*/
     constructor(address wethToken) { // Constructor that initializes the PoolFactory contract with the address of the WETH token. This address is stored in the immutable variable i_wethToken and is used when creating new pools to facilitate swaps involving WETH.
         i_wethToken = wethToken;
-    }
+    }  // @audit-info - lacking a zero address check
 
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
