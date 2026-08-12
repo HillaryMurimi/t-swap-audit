@@ -25,7 +25,7 @@ contract PoolFactory {
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     mapping(address token => address pool) private s_pools; // Mapping that associates each token address with its corresponding pool address. This allows for quick retrieval of the pool associated with a specific token.
-    mapping(address pool => address token) private s_tokens; // Mapping that associates each pool address with its corresponding token address. This allows for reverse lookup, enabling users to find the token associated with a given pool.
+    mapping(address pool => address token) private s_tokens; // Mapping that associates each pool address with its corresponding token address. This allows for reverse lookup, enabling users to find the token associated with a given pool. Token address is the address of the token that is being swapped in the pool, while the pool address is the address of the TSwapPool contract that manages the liquidity and facilitates swaps for that token. The token address changes when the token is transferred to another wallet, but the pool address remains the same, allowing for consistent access to the pool regardless of token ownership changes. When the token is transfered to another wallet, reverse look ups are still possible, as the pool address remains the same and can be used to find the associated token address in this mapping.
 
     address private immutable i_wethToken; // Immutable variable that stores the address of the WETH token. This is used when creating new pools to facilitate swaps involving WETH.
 
