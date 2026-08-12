@@ -59,6 +59,8 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
         uint256 wethWithdrawn,
         uint256 poolTokensWithdrawn
     );
+
+    // @audit-info - 3 events should be indexed if there are more than 3 parameters
     event Swap(
         address indexed swapper, // The address of the user who initiated the swap. This is indexed to allow for efficient filtering and searching of events related to specific swappers. Indexing this parameter enables users and external systems to easily track and analyze the trading activities of individual users, promoting transparency and accountability within the T-Swap ecosystem.
         IERC20 tokenIn,
@@ -114,13 +116,16 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
         uint256 wethToDeposit,
         uint256 minimumLiquidityTokensToMint, // minting here ensures that the user receives at least this amount of liquidity tokens for their deposit, providing a safeguard against unfavorable slippage. The minting is done by the TSwapPool contract itself, which manages the liquidity and facilitates swaps between the specified pool token and WETH. By setting a minimum amount of liquidity tokens to mint, users can have confidence that they will receive a fair share of the pool's liquidity in exchange for their deposit, even if market conditions change during the transaction.
         uint256 maximumPoolTokensToDeposit,
-        uint64 deadline
+        uint64 deadline // @audit-high! deadline not being used. If someone sets a deadline, let's say next block they couold still deposit
+        // IMPACT: HIGH! A userwho expects a deposit to fail, will go through. Severe disruption of functionality.
+        // Likelihood: HIGH
     )
         external
         revertIfZero(wethToDeposit)
         returns (uint256 liquidityTokensToMint)
     {
         if (wethToDeposit < MINIMUM_WETH_LIQUIDITY) {
+            // @audit-info MINIMUM_WETH_LIQUIDITY is a constant and therefore not required to be emitted
             revert TSwapPool__WethDepositAmountTooLow(
                 MINIMUM_WETH_LIQUIDITY,
                 wethToDeposit
@@ -179,6 +184,8 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
                 maximumPoolTokensToDeposit,
                 wethToDeposit
             );
+
+            // @audit-info - it would be better if this was before the `addLiquidityMintAndTransfer` call to follow CEI
             liquidityTokensToMint = wethToDeposit;
         }
     }
@@ -193,7 +200,7 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
         uint256 liquidityTokensToMint
     ) private {
         _mint(msg.sender, liquidityTokensToMint); // Mint the calculated amount of liquidity tokens to the user's address. This represents the user's share of the liquidity pool and allows them to participate in swaps and earn fees based on their contribution. By minting liquidity tokens, the TSwapPool contract ensures that users receive a fair representation of their stake in the pool, while also maintaining the proper balance of assets for swaps and liquidity provision.
-        emit LiquidityAdded(msg.sender, poolTokensToDeposit, wethToDeposit);
+        emit LiquidityAdded(msg.sender, poolTokensToDeposit, wethToDeposit); // @audit-low - this is backwards! It should be `(msg.sender, wethToDeposit, poolTokensToDeposit)`
 
         // Interactions
         i_wethToken.safeTransferFrom(msg.sender, address(this), wethToDeposit); // Transfer the specified amount of WETH from the user's address to the TSwapPool contract. This is done using the safeTransferFrom function from the SafeERC20 library, which ensures that the transfer is executed correctly and prevents potential issues such as failed transactions or unexpected behavior. By transferring WETH to the pool, the TSwapPool contract can maintain the proper balance of assets for swaps and liquidity provision, while also ensuring that users' contributions are securely managed.
@@ -273,6 +280,7 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
         // totalPoolTokensOfPool) + (wethToDeposit * poolTokensToDeposit) = k
         // (totalWethOfPool * totalPoolTokensOfPool) + (wethToDeposit * totalPoolTokensOfPool) = k - (totalWethOfPool *
         // poolTokensToDeposit) - (wethToDeposit * poolTokensToDeposit)
+        // @audit-info magic numbers
         uint256 inputAmountMinusFee = inputAmount * 997; 
         uint256 numerator = inputAmountMinusFee * outputReserves;
         uint256 denominator = (inputReserves * 1000) + inputAmountMinusFee;
@@ -292,7 +300,7 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
     {
         return
             ((inputReserves * outputAmount) * 10000) /
-            ((outputReserves - outputAmount) * 997);
+            ((outputReserves - outputAmount) * 997); // @audit-high
     } // Returns the amount of input tokens required to receive a specific amount of output tokens, considering the pool's reserves and fees.
 
     function swapExactInput(
@@ -305,7 +313,7 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
         public
         revertIfZero(inputAmount)
         revertIfDeadlinePassed(deadline)
-        returns (uint256 output)
+        returns (uint256 output)  // @audit-low, IMPACT:  LOW - protocol is giving the wrong return
     {
         uint256 inputReserves = inputToken.balanceOf(address(this));
         uint256 outputReserves = outputToken.balanceOf(address(this));

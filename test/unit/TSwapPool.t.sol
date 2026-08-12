@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
-import { Test, console } from "forge-std/Test.sol";
+import { Test, console2 } from "forge-std/Test.sol";
 import { TSwapPool } from "../../src/PoolFactory.sol";
 import { ERC20Mock } from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import { IERC20 } from "@openzeppelin/contracts/interfaces/IERC20.sol";
@@ -90,5 +90,21 @@ contract TSwapPoolTest is Test {
         pool.withdraw(100e18, 90e18, 100e18, uint64(block.timestamp));
         assertEq(pool.totalSupply(), 0);
         assert(weth.balanceOf(liquidityProvider) + poolToken.balanceOf(liquidityProvider) > 400e18);
+    }
+
+    function test_getInputAmountBasedOnOutputOverchargesUser() public view {
+        uint256 outputAmount = 1e18;
+        uint256 inputReserves = 100e18;
+        uint256 outputReserves = 100e18;
+
+        uint256 actualInput = pool.getInputAmountBasedOnOutput(outputAmount, inputReserves, outputReserves);
+
+        // What the input should be if the fee were correctly scaled by 1000, not 10,000
+        uint256 correctInput = ((inputReserves * outputAmount) * 1000) / ((outputReserves - outputAmount) * 997);
+
+        console2.log("Actual (buggy) input required: ", actualInput);
+        console2.log("Correct input required: ", correctInput);
+
+        assertGt(actualInput, correctInput * 9); // confirms roughly 10x overcharge
     }
 }
