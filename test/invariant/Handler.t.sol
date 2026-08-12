@@ -22,6 +22,9 @@ contract Handler is Test {
     int256 public actualDeltaX;
     int256 public actualDeltaY;
 
+    // Track how many liquidity tokens the LP currently holds, so withdraw() has something real to burn.
+    uint256 public lpLiquidityTokenBalance;
+
     constructor(TSwapPool _pool){
         pool = _pool;
         weth = ERC20Mock(pool.getWeth());
@@ -89,10 +92,61 @@ contract Handler is Test {
         weth.approve(address(pool), type(uint256).max);
         poolToken.approve(address(pool), type(uint256).max);
 
-        pool.deposit(wethAmount, 0, uint256(expectedDeltaX), uint64(block.timestamp));
+        uint256 liquidityMinted = pool.deposit(wethAmount, 0, uint256(expectedDeltaX), uint64(block.timestamp));
         vm.stopPrank();
 
+        // This was missing - track how many liquidity tokens the LP now holds
+        lpLiquidityTokenBalance += liquidityMinted;
+
         //actual
+        uint256 endingY = weth.balanceOf(address(pool));
+        uint256 endingX = poolToken.balanceOf(address(pool));
+
+        actualDeltaY = int256(endingY) - int256(startingY);
+        actualDeltaX = int256(endingX) - int256(startingX);
+    }
+
+    function withdraw (uint256 liquidityTokensToBurn) public {
+        console2.log("Withdraw() called, lpLiquidityTokenBalance = ", lpLiquidityTokenBalance);
+        // NOthing to withdraw if the LP hasb't deposited nun yet
+        if (lpLiquidityTokenBalance == 0) {
+            return;
+        }
+
+        liquidityTokensToBurn = bound(liquidityTokensToBurn, 1, lpLiquidityTokenBalance);
+
+        uint256 wethReserves = weth.balanceOf(address(pool));
+        uint256 poolTokenReserves = poolToken.balanceOf(address(pool));
+        uint256 totalLiquidity = pool.totalLiquidityTokenSupply();
+
+        if (totalLiquidity == 0){
+            return;
+        }
+
+        uint256 expectedWethOut = (liquidityTokensToBurn * wethReserves) / totalLiquidity;
+        uint256 expectedPoolTokenOut = (liquidityTokensToBurn * poolTokenReserves) / totalLiquidity;
+
+        // Skip degenerate cases where rounding would produce a zero-value withdrawal on either side, since the pool's own revertIfZero checks would just reject these anayway.
+        if (expectedWethOut == 0 || expectedPoolTokenOut == 0) {
+            return;
+        }
+
+        startingY = int256(wethReserves);
+        startingX = int256(poolTokenReserves);
+        expectedDeltaY = int256(-1) * int256(expectedWethOut);
+        expectedDeltaX = int256(-1) * int256(expectedPoolTokenOut);
+
+        vm.startPrank(liquidityProvider);
+        pool.withdraw(
+            liquidityTokensToBurn,
+            expectedWethOut,
+            expectedPoolTokenOut,
+            uint64(block.timestamp)
+        );
+        vm.stopPrank();
+
+        lpLiquidityTokenBalance -= liquidityTokensToBurn;
+
         uint256 endingY = weth.balanceOf(address(pool));
         uint256 endingX = poolToken.balanceOf(address(pool));
 
