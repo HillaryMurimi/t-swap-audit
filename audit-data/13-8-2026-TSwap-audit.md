@@ -27,14 +27,14 @@ Collectively, these findings indicate the core AMM math is sound under standard 
 
 ## Issues Found
 
-| Severity | Number of Issues Found |
-|---|---|
-| High | 4 |
-| Medium | 2 |
-| Low | — |
-| Informational | — |
-| Gas | — |
-| **Total** | **6** |
+| Severity      | Number of Issues Found |
+| ------------- | ---------------------- |
+| High          | 4                      |
+| Medium        | 2                      |
+| Low           | —                      |
+| Informational | —                      |
+| Gas           | —                      |
+| **Total**     | **6**                  |
 
 *(Update the Low/Informational/Gas counts and this table once those sections are finalized — see placeholders below.)*
 
@@ -143,7 +143,7 @@ function getOutputAmountBasedOnInput(
 
 `getInputAmountBasedOnOutput` uses `10000` instead of the correct `1000` as its scaling denominator. This is not a stylistic inconsistency — it's a mathematical error that changes the effective fee charged from the intended 0.3% to a dramatically higher, incorrect rate.
 
-**Impact:** Every user who calls `swapExactOutput` (and, by extension, `sellPoolTokens`, which wraps `swapExactOutput`) is charged significantly more input tokens than the protocol's advertised 0.3% fee actually requires. Instead of paying `input * 1000/997` (≈0.3009% effective fee) to receive their desired output, users are forced to pay `input * 10000/997` — roughly **10x** the correct amount relative to the intended fee structure.
+**Impact:** Every user who calls `swapExactOutput` (and, by extension, `sellPoolTokens`, which wraps `swapExactOutput`) is charged significantly more input tokens than the protocol's advertised 0.3% fee actually requires. Instead of paying `input * 1000/997` (approx. 0.3009% effective fee) to receive their desired output, users are forced to pay `input * 10000/997` — roughly **10x** the correct amount relative to the intended fee structure.
 
 This is a direct, silent overcharge on every single `swapExactOutput` transaction. Depending on the specific reserve ratios involved, this can result in users paying dramatically more than expected for a given output, and represents a significant and consistent value leak away from users and toward whichever side of the pool benefits from the miscalculated ratio.
 
@@ -152,10 +152,10 @@ This is a direct, silent overcharge on every single `swapExactOutput` transactio
 Consider a pool with `inputReserves = 100e18` and `outputReserves = 100e18`, and a user wants `outputAmount = 1e18`:
 
 - **Correct formula (mirroring `getOutputAmountBasedOnInput`'s fee logic, using `1000` instead of `10000`):**
-  `inputAmount = (100e18 * 1e18 * 1000) / ((100e18 - 1e18) * 997) ≈ 1.0107e18`
+  `inputAmount = (100e18 * 1e18 * 1000) / ((100e18 - 1e18) * 997) approx.  1.0107e18`
 
 - **Actual (buggy) formula, as currently implemented:**
-  `inputAmount = (100e18 * 1e18 * 10000) / ((100e18 - 1e18) * 997) ≈ 10.107e18`
+  `inputAmount = (100e18 * 1e18 * 10000) / ((100e18 - 1e18) * 997) approx.  10.107e18`
 
 The buggy version demands roughly **10x** the input tokens the correctly-scaled fee formula would require for the same output.
 
