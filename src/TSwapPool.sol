@@ -35,6 +35,8 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
     error TSwapPool__OutputTooLow(uint256 actual, uint256 min);// Custom error that is thrown when the actual output of a swap is lower than the minimum expected output. This ensures that users are aware of the minimum output requirement and prevents them from receiving less than they expected. @q Why? Because the user may have set a minimum acceptable output for the swap, and if the actual output is lower than this minimum, the transaction should not be executed. This helps prevent unexpected outcomes or losses due to changes in market conditions or other factors that may have occurred since the transaction was initiated.
     error TSwapPool__MustBeMoreThanZero();
 
+    error TSwapPool__InputTooHigh(uint256 actual, uint256 max);
+
     using SafeERC20 for IERC20; // The SafeERC20 library is used to safely interact with ERC20 tokens, ensuring that token transfers and approvals are handled correctly and preventing potential issues such as failed transactions or unexpected behavior. This is important for the TSwapPool contract, as it needs to securely manage token transfers when users add or remove liquidity and perform swaps within the pool.
 
     /*//////////////////////////////////////////////////////////////
@@ -346,6 +348,7 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
         IERC20 inputToken,
         IERC20 outputToken,
         uint256 outputAmount,
+        uint256 maximumInputAmount,
         uint64 deadline
     )
         public
@@ -362,6 +365,10 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
             outputReserves
         );
 
+        // for SPILLAGE PROTECTION
+        if (inputAmount > maximumInputAmount) {
+            revert TSwapPool__InputTooHigh(inputAmount, maximumInputAmount);
+        }
         _swap(inputToken, inputAmount, outputToken, outputAmount);
     }
 
@@ -371,12 +378,14 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
      * @return wethAmount amount of WETH received by caller
      */
     function sellPoolTokens( // CEI pattern✅: Checks, Effects, Interactions. This function first checks if the poolTokenAmount is greater than zero and if the deadline has not passed. Then it calculates the input amount of pool tokens required to receive the desired output amount of WETH. Finally, it performs the swap by calling the _swap function, which handles the token transfers and emits the Swap event. By following the CEI pattern, the TSwapPool contract minimizes the risk of reentrancy attacks and ensures that state changes are made before external calls are executed.
-        uint256 poolTokenAmount
+        uint256 poolTokenAmount,
+        uint256 minWethToReceive // @audit added this parameter✅
     ) external returns (uint256 wethAmount) {
         return
             swapExactOutput(
                 i_poolToken,
                 i_wethToken,
+                minWethToReceive,
                 poolTokenAmount,
                 uint64(block.timestamp)
             );
@@ -441,6 +450,7 @@ contract TSwapPool is ERC20 { // The TSwapPool contract is an ERC20 token that r
     } // Calculates the amount of pool tokens to deposit based on the amount of WETH the user is depositing. This is done by maintaining the ratio of WETH to pool tokens consistent with the pool's invariant. By calculating the required amount of pool tokens to deposit, the TSwapPool contract can ensure that users maintain the proper balance of assets within the pool and facilitate fair pricing for swaps and liquidity provision.
 
     /// @notice a more verbose way of getting the total supply of liquidity tokens
+    // audit-info - this should be external, not public!
     function totalLiquidityTokenSupply() public view returns (uint256) {
         return totalSupply();
     }

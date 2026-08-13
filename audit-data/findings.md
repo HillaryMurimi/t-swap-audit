@@ -193,3 +193,102 @@ forge test --mt test_getInputAmountBasedOnOutputOverchargesUser -vv
             ((outputReserves - outputAmount) * 997);
     }
 ```
+
+### [H-#] `TSwapPool::swapExactOutput` has no slippage protection, allowing users to be charged an arbitrarily high input amount
+
+**Description:** `swapExactOutput` lets a caller specify exactly how much output they want, then calculates and charges whatever `inputAmount` the pricing formula determines is required:
+
+```javascript
+function swapExactOutput(
+    IERC20 inputToken,
+    IERC20 outputToken,
+    uint256 outputAmount,
+    uint64 deadline
+)
+    public
+    revertIfZero(outputAmount)
+    revertIfDeadlinePassed(deadline)
+    returns (uint256 inputAmount)
+{
+    uint256 inputReserves = inputToken.balanceOf(address(this));
+    uint256 outputReserves = outputToken.balanceOf(address(this));
+
+    inputAmount = getInputAmountBasedOnOutput(
+        outputAmount,
+        inputReserves,
+        outputReserves
+    );
+
+@>  _swap(inputToken, inputAmount, outputToken, outputAmount);
+}
+```
+
+Unlike `swapExactInput`, which requires a `minOutputAmount` parameter and reverts if the actual output would be less than the caller expects:
+
+```javascript
+function swapExactInput(
+    IERC20 inputToken,
+    uint256 inputAmount,
+    IERC20 outputToken,
+    uint256 minOutputAmount,
+    uint64 deadline
+)
+    ...
+{
+    ...
+    if (outputAmount < minOutputAmount) {
+        revert TSwapPool__OutputTooLow(outputAmount, minOutputAmount);
+    }
+    ...
+}
+```
+
+`swapExactOutput` has **no equivalent protection on the input side**. There is no `maximumInputAmount` parameter, and no check comparing the computed `inputAmount` against any caller-supplied ceiling. Whatever `getInputAmountBasedOnOutput` returns, the caller is charged — no matter how unfavorable.
+
+**Impact:** Between the moment a user signs a `swapExactOutput` transaction and the moment it's actually mined, the pool's reserves can shift significantly due to other swaps executing first (organically, or via deliberate front-running/MEV). Since there is no cap on `inputAmount`, the user has no on-chain guarantee about the maximum price they'll pay for their desired output.
+
+A malicious actor (or MEV bot) can observe a pending `swapExactOutput` transaction in the mempool and front-run it with trades that skew the pool's reserve ratio, causing `getInputAmountBasedOnOutput` to compute a dramatically higher `inputAmount` than the user expected when they signed the transaction — then back-run it to restore the ratio and capture the difference (a classic sandwich attack). The user's transaction will still succeed, silently charging them far more than intended, since nothing in the function reverts on an unfavorable price.
+
+This is compounded by the separate `getInputAmountBasedOnOutput` scaling bug (H-#), since users are already being overcharged by the formula itself — with no slippage cap in place, that overcharge has no upper bound at all under adverse market/MEV conditions.
+
+**Proof of Concept:**
+
+1. User A calls `swapExactOutput` intending to receive `1000` output tokens, expecting to pay approximately `X` input tokens based on the pool's current reserves.
+2. Before User A's transaction is mined, an attacker submits a transaction that swaps heavily in a direction that shifts the reserve ratio unfavorably for User A.
+3. User A's transaction is mined after the attacker's, and `getInputAmountBasedOnOutput` now computes a much larger `inputAmount` than User A anticipated.
+4. Because there is no `maximumInputAmount` check, the swap proceeds anyway, charging User A significantly more than they were willing to pay — with no way to have prevented this on-chain.
+
+**Recommended Mitigation:** Add a `maximumInputAmount` parameter, mirroring the protection `swapExactInput` already provides via `minOutputAmount`:
+
+```diff
++   error TSwapPool__InputTooHigh(uint256 actual, uint256 max);
+    function swapExactOutput(
+        IERC20 inputToken,
+        IERC20 outputToken,
+        uint256 outputAmount,
++       uint256 maximumInputAmount,
+        uint64 deadline
+    )
+        public
+        revertIfZero(outputAmount)
+        revertIfDeadlinePassed(deadline)
+        returns (uint256 inputAmount)
+    {
+        uint256 inputReserves = inputToken.balanceOf(address(this));
+        uint256 outputReserves = outputToken.balanceOf(address(this));
+
+        inputAmount = getInputAmountBasedOnOutput(
+            outputAmount,
+            inputReserves,
+            outputReserves
+        );
+
++       if (inputAmount > maximumInputAmount) {
++           revert TSwapPool__InputTooHigh(inputAmount, maximumInputAmount);
++       }
+
+        _swap(inputToken, inputAmount, outputToken, outputAmount);
+    }
+```
+
+This ensures the transaction reverts rather than silently executing at an unfavorable price if reserves shift beyond the caller's tolerance between signing and mining.
